@@ -1,4 +1,4 @@
-# Formula 1 Data Science Project
+# Formula 1 Data Science Final Year Project
 
 This project is made from data taken from various resources largly from kaggle and official formula 1 website.
 
