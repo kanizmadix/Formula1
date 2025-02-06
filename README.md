@@ -3,7 +3,7 @@
 This project is made from data taken from various resources largly from kaggle and official formula 1 website.
 
 - It shows the analysis of pitstop duration, laptime duration as well as race by race points analysis for the year 2023.
-- I have also used linear regression model for the prediction of 2024 driver points table.
+- I have also used linear regression model for the prediction of 2025 driver points table.
 - Basic information is added to explain someone new to F1.
 - Track information, driver information and construction information is added in this project.
 - Two Tableau dashboards are also embedded in this website related to Constructor and Driver analysis.
