@@ -9,6 +9,6 @@ def references():
     st.subheader('Technology')
     st.write("""
             <div style="background-color: #FFFFFF; padding: 10px;">
-                <span style="color: black;">\n\nI have used below technology stack.\n\n- Python (3.10.2)\n- Streamlit (1.33.0)\n- VSCode\n- Jupyte Notebook\n- Tableau Public\n \n-F1 Open API\n - Libraries: Pandas, NumPy, Matplotlib, Plotly, PIL, Math.</span>
+                <span style="color: black;">\n\nI have used below technology stack.\n\n- Python (3.10.2)\n- Streamlit (1.33.0)\n- VSCode\n- Jupyte Notebook\n- Tableau Public\n \n - F1 Open API\n - Libraries: Pandas, NumPy, Matplotlib, Plotly, PIL, Math.</span>
             </div>
             """, unsafe_allow_html=True)
