@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101014">
+  <meta name="description" content="Explore Formula 1 seasons, race results, lap pace, pit strategy and championship forecasts using public data.">
+  <title>Race Lab · Formula 1 Analytics</title>
+  <link rel="icon" type="image/svg+xml" href="./assets/mark.svg">
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <a class="skip" href="#content">Skip to content</a>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="#overview"><img src="./assets/mark.svg" width="36" height="36" alt=""><span>Race<span class="brand-accent">Lab</span><small>FORMULA 1 ANALYTICS</small></span></a>
+      <nav id="nav" aria-label="Main navigation"></nav>
+      <div class="sidebar-bottom">
+        <a href="#guide" data-page="guide" class="nav-link" id="guide-link">About &amp; data</a>
+        <div class="sidebar-note"><span></span> COLLEGE PROJECT</div>
+      </div>
+    </aside>
+    <div class="workspace">
+      <header class="topbar">
+        <div class="breadcrumbs"><span>Race Lab</span><span aria-hidden="true">/</span><strong id="breadcrumb">Overview</strong></div>
+        <div class="top-actions">
+          <label for="year">Season</label>
+          <select id="year" aria-label="Season"></select>
+        </div>
+      </header>
+      <main id="content" tabindex="-1" aria-busy="true">
+        <div class="panel empty" role="status">Loading championship data…</div>
+      </main>
+      <footer><span>Race Lab · Independent Formula 1 data project</span><a href="#guide">Sources &amp; methodology ↗</a></footer>
+    </div>
+  </div>
+</body>
+</html>

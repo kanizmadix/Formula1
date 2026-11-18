@@ -1,3 +1,6 @@
 # Ignore virtual environments
 f1_env/
 .venv/
+
+dist/
+node_modules/
