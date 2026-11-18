@@ -144,3 +144,15 @@ td small,.row-note{display:block;color:var(--muted);font-size:11px;margin-top:2p
   .sidebar nav{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));overflow:visible;margin:0;gap:3px 5px}
   .sidebar .nav-link{min-height:34px;padding:6px 8px}
 }
+.strategy-timeline{display:block;width:100%;height:auto}
+.strategy-timeline text{font:11px var(--mono);fill:var(--muted)}
+.strategy-timeline .strategy-driver{fill:var(--strong);font-weight:600}
+.strategy-scroll{max-height:260px;overflow:auto}
+.strategy-scroll td:not(.num){white-space:normal}
+.strategy-scroll th{position:sticky;top:0;background:var(--panel)}
+.control-row>.segmented{flex-wrap:wrap;max-width:100%}
+.chart-export{margin-top:8px}
+[data-share-status]{overflow-wrap:anywhere}
+[data-search]{min-height:39px;min-width:min(240px,100%);border:1px solid var(--line);border-radius:7px;background:#202027;color:var(--strong);padding:7px 10px;font:inherit}
+.search-list{list-style:none;padding:0;margin:0}
+.search-links{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}

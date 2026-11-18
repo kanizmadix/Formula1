@@ -10,5 +10,15 @@ await mkdir(new URL('data/', output), { recursive: true });
 await Promise.all(files.map(file => cp(new URL(file, data), new URL(`data/${file}`, output))));
 const years = files.filter(file => /^\d{4}\.json$/.test(file)).map(file => Number(file.slice(0, 4))).sort((a, b) => b - a);
 await writeFile(new URL('data/index.json', output), JSON.stringify({ years, records: files.includes('records.json') }));
+const archive = new URL('season-analysis/', data);
+const archiveFiles = await readdir(archive).catch(error => {
+  if (error.code !== 'ENOENT') throw error;
+  return [];
+});
+const archiveOutput = new URL('data/season-analysis/', output);
+await mkdir(archiveOutput, { recursive: true });
+await Promise.all(archiveFiles.filter(file => /^(?:\d{4}|winless)\.json$/.test(file)).map(file =>
+  cp(new URL(file, archive), new URL(file, archiveOutput))
+));
 await writeFile(new URL('.nojekyll', output), '');
 console.log(`Built dist/ with ${years.length} season snapshots.`);

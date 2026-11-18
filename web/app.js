@@ -1,11 +1,16 @@
 import { json, legacyPits, legacyTiming, openTiming, season, timingSession, winnerRecords } from './data.js';
 import { completed } from './metrics.js';
 import { download, e, empty, icon } from './ui.js';
-import { calendar, forecast, guide, overview, raceView, recordsView, standings } from './views.js';
+import { calendar, driverComparison, forecast, guide, overview, raceTabs, raceView, recordsView, standings } from './views.js';
+import { loadStrategyContext, strategyView } from './strategy.js';
+import { defaultTelemetryLap, loadQualifying, loadTelemetry, qualifyingView, telemetryView } from './telemetry.js';
+import { DEFAULT_VALIDATION_YEARS, evaluateForecasts, forecastValidationView } from './forecast-validation.js';
+import { loadSeasonAnalysis, loadWinlessRecords, seasonAnalysisView, seasonArchiveRecordsView } from './season-analysis.js';
+import { downloadChartCsv, formatHash, parseHash, renderSearch, updateSearch } from './discovery.js';
 
 const pages = {
   overview: 'Overview', standings: 'Standings', calendar: 'Calendar', race: 'Race analysis',
-  records: 'Records', forecast: 'Forecast lab', guide: 'About & data'
+  analysis: 'Season data', records: 'Records', forecast: 'Forecast lab', search: 'Search', guide: 'About & data'
 };
 const content = document.querySelector('#content');
 const yearSelect = document.querySelector('#year');
@@ -13,6 +18,8 @@ const nav = document.querySelector('#nav');
 const todayYear = new Date().getUTCFullYear();
 const seasonCache = new Map();
 const timingCache = new Map();
+const resources = new Map();
+const activeResources = new Set();
 let manifest = { years: [], records: false };
 let year = todayYear;
 let route = { page: 'overview' };
@@ -20,8 +27,8 @@ let mode = 'drivers';
 let filter = 'all';
 let sprint = false;
 let pitMetric = 'lane';
-let standingsPair = [];
-let timingPair = [];
+let searchQuery = '';
+let analysisFilters = {};
 let forecastRound = null;
 let records;
 let dataKey = '';
@@ -30,20 +37,19 @@ nav.innerHTML = Object.entries(pages).filter(([id]) => id !== 'guide').map(([id,
   `<a href="#${id}" data-page="${id}" class="nav-link">${icon(id)}${e(label)}</a>`).join('');
 document.querySelector('#guide-link').innerHTML = `${icon('guide')}About &amp; data`;
 
-function parseHash() {
-  const [page, yearText, roundText, tabText] = location.hash.slice(1).split('/');
-  const wanted = Number(yearText);
-  return {
-    page: Object.hasOwn(pages, page) ? page : 'overview',
-    year: /^\d{4}$/.test(yearText ?? '') && wanted >= 1950 && wanted <= Math.max(todayYear, ...manifest.years) ? wanted : null,
-    round: /^\d{1,2}$/.test(roundText ?? '') ? Number(roundText) : null,
-    tab: ['results', 'timing', 'circuit'].includes(tabText) ? tabText : 'results'
-  };
+const hashOptions = () => ({
+  maxYear: Math.max(todayYear, ...manifest.years), pages: Object.keys(pages), raceTabs: raceTabs.map(([id]) => id)
+});
+
+function navigate(page, targetYear = year, round = null, tab = 'results', options = {}) {
+  const next = formatHash({ page, year: targetYear, round, tab, ...options }, hashOptions());
+  if (next !== location.hash) location.hash = next;
 }
 
-function navigate(page, targetYear = year, round = null, tab = 'results') {
-  const next = `#${page}/${targetYear}${round ? `/${round}/${tab}` : ''}`;
-  if (next !== location.hash) location.hash = next;
+function updateRoute(fields) {
+  const next = formatHash({ ...route, year, ...fields }, hashOptions());
+  history.replaceState(null, '', next);
+  route = parseHash(next, hashOptions());
 }
 
 function getRace(data) {
@@ -161,21 +167,112 @@ function getTiming(data, race, pair, retry = false) {
       entry.error = `Race timing could not be loaded. ${error.message}`;
     } finally {
       entry.loading = false;
-      if (route.page === 'race' && route.tab === 'timing') render();
+      if (route.page === 'race' && ['timing', 'strategy', 'telemetry'].includes(route.tab)) render();
     }
   })();
   return entry;
 }
 
+function resource(key, load, message) {
+  activeResources.add(key);
+  if (resources.has(key)) return resources.get(key);
+  const entry = { loading: true };
+  resources.set(key, entry);
+  Promise.resolve().then(load).then(data => {
+    entry.data = data;
+  }).catch(error => {
+    entry.error = `${message} ${error.message}`;
+  }).finally(() => {
+    entry.loading = false;
+    if (activeResources.has(key) && resources.get(key) === entry) render();
+  });
+  return entry;
+}
+
+function comparableDrivers(race, pair) {
+  return pair.map(id => race.results.find(result => result.id === id) ?? null);
+}
+
+function telemetrySelection(drivers, timing, preferred = route.laps) {
+  const archive = Object.groupBy(timing?.rawLaps ?? [], lap => lap.driver_number);
+  const selected = drivers.map((driver, i) => {
+    const laps = archive[driver?.number];
+    const requested = laps?.find(lap => lap.lap_number === preferred?.[i]);
+    return requested ? requested.lap_number : defaultTelemetryLap(laps);
+  });
+  const raw = selected.map((number, i) => archive[drivers[i]?.number]?.find(lap => lap.lap_number === number) ?? null);
+  return { archive, selected, raw };
+}
+
+function raceLab(data, race, timing, pair) {
+  const { tab } = route;
+  if (tab === 'qualifying') {
+    const state = resource(`qualifying/${data.year}/${race.round}`, () => loadQualifying(data.year, race), 'Qualifying could not be loaded.');
+    return { loading: state.loading, markup: qualifyingView(state, race) };
+  }
+  if (tab !== 'strategy' && tab !== 'telemetry') return { markup: '' };
+
+  const title = tab === 'strategy' ? 'Race Strategy Lab' : 'Lap telemetry';
+  if (data.year < 2023) return { markup: empty(`${title} uses the OpenF1 archive from 2023 onward. Choose Laps & pits for earlier timing.`) };
+  if (!race.results.length) return { markup: empty(`${title} becomes available after the Grand Prix and the archive processing window.`) };
+
+  const drivers = comparableDrivers(race, pair);
+  const controls = driverComparison(race, pair);
+  const sessionKey = timing?.data?.sessionKey;
+  if (tab === 'strategy') {
+    const context = sessionKey ? resource(`strategy/${sessionKey}`, () => loadStrategyContext(sessionKey), 'Race context could not be loaded.') : null;
+    return { loading: context?.loading, markup: controls + strategyView(timing, context, drivers.filter(Boolean)) };
+  }
+  const { archive, selected, raw } = telemetrySelection(drivers, timing?.data);
+  const liveData = sessionKey && raw.some(Boolean) ? resource(
+    `telemetry/${sessionKey}/${raw.map(lap => lap ? `${lap.driver_number}-${lap.lap_number}` : '-').join('/')}`,
+    () => loadTelemetry(sessionKey, raw), 'Lap telemetry could not be loaded.'
+  ) : { loading: Boolean(timing?.loading) };
+  if (timing?.error) return { markup: controls + empty(timing.error, 'timing') };
+  return { loading: liveData.loading, markup: controls + telemetryView(liveData, drivers, archive, selected) };
+}
+
+function validatedForecast(data) {
+  const state = resource('forecast/validation', async () => {
+    const results = await Promise.allSettled(DEFAULT_VALIDATION_YEARS.map(target => json(`./data/${target}.json`)));
+    return {
+      seasons: results.flatMap(result => result.value ?? []),
+      status: results.some(result => result.status === 'rejected') ? 'error' : 'ready'
+    };
+  }, 'Forecast validation could not be loaded.');
+  const validation = state.data ?? { status: state.loading ? 'loading' : 'error' };
+  const evaluation = validation.seasons ? evaluateForecasts(validation.seasons, mode) : null;
+  return `<div class="stack">${forecast(data, mode, forecastRound ?? completed(data).at(-1)?.round, evaluation)}${forecastValidationView(validation, mode)}</div>`;
+}
+
+function seasonAnalysisState(targetYear) {
+  const seasonState = loadYear(targetYear);
+  const data = seasonState.data;
+  const state = resource(`season-analysis/${targetYear}/${data?.fetchedAt ?? 'archive'}`,
+    () => loadSeasonAnalysis(data ?? targetYear), 'Season timing could not be loaded.');
+  return { state, seasonState };
+}
+
 function render(focus) {
+  activeResources.clear();
   let markup;
   let busy = false;
   if (route.page === 'guide') {
     markup = guide();
+  } else if (route.page === 'analysis') {
+    const { state, seasonState } = seasonAnalysisState(year);
+    busy = Boolean(state.loading || (!state.data?.races.length && seasonState.loading));
+    markup = state.data?.races.length ? seasonAnalysisView(state.data, analysisFilters)
+      : busy ? empty(`Loading season analysis for ${year}…`)
+      : empty(state.error ?? seasonState.error ?? 'No season timing is available.', 'analysis');
   } else if (route.page === 'records') {
     const entry = loadRecords();
-    markup = recordsView(entry);
-    busy = entry.loading;
+    const { state: archive } = seasonAnalysisState(year);
+    const winless = resource('winless', loadWinlessRecords, 'Career records could not be loaded.');
+    busy = Boolean(entry.loading || archive.loading || winless.loading);
+    markup = recordsView(entry) + (archive.data?.races.length || winless.data
+      ? `<div class="section-title"><h2>Starts &amp; retirements</h2></div>${seasonArchiveRecordsView(archive.data, { winless: winless.data })}`
+      : busy ? '<p class="subtle" role="status">Loading starts and retirement records…</p>' : '');
   } else {
     const entry = loadYear(year);
     const { data } = entry;
@@ -185,29 +282,32 @@ function render(focus) {
     } else {
       const viewKey = `${data.year}/${route.page}/${route.round}`;
       if (viewKey !== dataKey) {
-        standingsPair = [];
-        timingPair = [];
         forecastRound = null;
         sprint = false;
         dataKey = viewKey;
       }
       switch (route.page) {
         case 'standings':
-          markup = standings(data, mode, effectivePair(data[mode], standingsPair), entry.cached);
+          markup = standings(data, mode, effectivePair(data[mode], route.pair), entry.cached);
           break;
         case 'calendar':
           markup = calendar(data, filter, entry.cached);
           break;
+        case 'search':
+          markup = renderSearch(data, searchQuery, { pair: route.pair });
+          break;
         case 'race': {
           const race = getRace(data);
-          const pair = effectivePair(race.results.filter(row => row.number !== null), timingPair);
-          const timing = route.tab === 'timing' ? getTiming(data, race, pair) : null;
-          busy = Boolean(timing?.loading);
-          markup = raceView(data, race, route.tab, sprint, timing, pair, pitMetric);
+          const pair = effectivePair(race.results.filter(row => row.number !== null), route.pair);
+          const usesTiming = ['timing', 'strategy', 'telemetry'].includes(route.tab) && (route.tab === 'timing' || data.year >= 2023);
+          const timing = usesTiming ? getTiming(data, race, pair) : null;
+          const lab = raceLab(data, race, timing, pair);
+          busy = Boolean(timing?.loading || lab.loading);
+          markup = raceView(data, race, route.tab, sprint, timing, pair, pitMetric, lab.markup);
           break;
         }
         case 'forecast':
-          markup = forecast(data, mode, forecastRound ?? completed(data).at(-1)?.round);
+          markup = validatedForecast(data);
           break;
         default:
           markup = overview(data, mode, entry.cached);
@@ -229,12 +329,16 @@ function render(focus) {
 }
 
 function applyRoute() {
-  const next = parseHash();
+  const next = parseHash(location.hash, hashOptions());
   const newPage = route.page !== next.page;
   const previousY = year;
   route = next;
   year = route.year ?? year;
-  if (previousY !== year) filter = 'all';
+  mode = route.mode ?? (route.page === 'standings' && route.pair?.length ? 'drivers' : mode);
+  if (previousY !== year) {
+    filter = 'all';
+    analysisFilters = {};
+  }
   updateHeader();
   render();
   if (newPage || previousY !== year) {
@@ -247,28 +351,59 @@ function onControl(control, value) {
   const data = seasonCache.get(year)?.data;
   if (control === 'mode') {
     mode = value;
-    standingsPair = [];
+    updateRoute({ mode, pair: [] });
   }
   if (control === 'calendar-filter') filter = value;
-  if (control === 'race-tab' && data) navigate('race', year, getRace(data).round, value);
+  if (control === 'race-tab' && data) {
+    navigate('race', year, getRace(data).round, value, { pair: route.pair, laps: route.laps });
+  }
   if (control === 'result-kind') sprint = value === 'sprint';
   if (control === 'pit-metric') pitMetric = value;
 }
 
 function onSelect(control, value) {
+  if (route.page === 'analysis' && ['driver', 'team', 'circuit'].includes(control)) {
+    analysisFilters = { ...analysisFilters, [control]: value };
+    return;
+  }
   const data = seasonCache.get(year)?.data;
   if (!data) return;
-  if (control === 'race-picker') navigate('race', year, Number(value), route.tab);
+  if (control === 'race-picker') navigate('race', year, Number(value), route.tab, { pair: route.pair });
   if (control === 'forecast-round') forecastRound = Number(value);
-  if (control.startsWith('standings-')) {
-    standingsPair = effectivePair(data[mode], standingsPair);
-    standingsPair[control.endsWith('first') ? 0 : 1] = value;
+  if (control === 'telemetry-first-lap' || control === 'telemetry-second-lap') {
+    const race = getRace(data);
+    const pair = effectivePair(race.results.filter(row => row.number !== null), route.pair);
+    const timing = getTiming(data, race, pair);
+    const { selected } = telemetrySelection(comparableDrivers(race, pair), timing?.data);
+    selected[control === 'telemetry-first-lap' ? 0 : 1] = Number(value) || null;
+    updateRoute({ round: race.round, pair, laps: selected });
   }
-  if (control.startsWith('timing-')) {
-    timingPair = effectivePair(getRace(data).results.filter(row => row.number !== null), timingPair);
-    timingPair[control.endsWith('first') ? 0 : 1] = value;
+  if (control.startsWith('standings-') || control.startsWith('timing-')) {
+    const race = control.startsWith('timing-') ? getRace(data) : null;
+    const options = race ? race.results.filter(row => row.number !== null) : data[mode];
+    const pair = effectivePair(options, route.pair);
+    pair[control.endsWith('first') ? 0 : 1] = value;
+    updateRoute({ round: race?.round ?? route.round, pair, mode: race ? null : mode, laps: [] });
   }
 }
+
+async function shareComparison(target) {
+  const data = seasonCache.get(year)?.data;
+  if (!data) return;
+  const race = route.page === 'race' ? getRace(data) : null;
+  const options = race ? race.results.filter(row => row.number !== null) : data[mode];
+  const pair = effectivePair(options, route.pair);
+  const url = new URL(location.href);
+  url.hash = formatHash({ ...route, year, round: race?.round, pair, mode: race ? null : mode }, hashOptions());
+  const status = target.parentElement.querySelector('[data-share-status]');
+  try {
+    await navigator.clipboard.writeText(url.href);
+    status.textContent = 'Comparison link copied.';
+  } catch {
+    status.textContent = url.href;
+  }
+}
+
 
 function onDownload(section) {
   const data = seasonCache.get(year)?.data;
@@ -298,13 +433,27 @@ content.addEventListener('click', event => {
     if (control !== 'race-tab') render(target);
   }
   if (section) onDownload(section);
+  if (target.hasAttribute('data-share')) shareComparison(target);
+  if (target.hasAttribute('data-chart-csv')) downloadChartCsv(target);
   if (retry) {
+    if (retry === 'analysis') {
+      for (const key of activeResources) {
+        if (key.startsWith(`season-analysis/${year}/`)) resources.delete(key);
+      }
+      loadYear(year, true);
+    }
     if (retry === 'season') loadYear(year, true);
+    if (retry === 'qualifying') resources.delete(`qualifying/${year}/${getRace(seasonCache.get(year).data).round}`);
+    if (retry === 'telemetry') for (const key of activeResources) {
+      if (key.startsWith('telemetry/')) resources.delete(key);
+    }
     if (retry === 'records') loadRecords(true);
-    if (retry === 'timing') {
+    if (retry === 'timing' || retry === 'strategy') {
       const data = seasonCache.get(year)?.data;
       const race = getRace(data);
-      const pair = effectivePair(race.results.filter(row => row.number !== null), timingPair);
+      const pair = effectivePair(race.results.filter(row => row.number !== null), route.pair);
+      const previous = getTiming(data, race, pair);
+      if (retry === 'strategy' && previous?.data?.sessionKey) resources.delete(`strategy/${previous.data.sessionKey}`);
       getTiming(data, race, pair, true);
     }
     render();
@@ -317,6 +466,17 @@ content.addEventListener('change', event => {
   if (!control) return;
   onSelect(control, target.value);
   if (control !== 'race-picker') render(target);
+});
+
+content.addEventListener('input', event => {
+  if (!event.target.matches('[data-search]')) return;
+  searchQuery = event.target.value;
+  updateSearch(content, seasonCache.get(year)?.data, searchQuery, { pair: route.pair });
+});
+content.addEventListener('submit', event => {
+  if (!event.target.matches('[data-search-form]')) return;
+  event.preventDefault();
+  document.getElementById('season-search-results')?.querySelector('a')?.focus();
 });
 
 function chartReadout(event) {

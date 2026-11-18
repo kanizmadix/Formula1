@@ -1,9 +1,13 @@
+import { chartCsvRows } from './chart-rows.js';
+
 const paths = {
   overview: 'M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z',
   standings: 'M8 21h8m-4-4v4M7 4h10v6a5 5 0 0 1-10 0zm0 2H3v2a4 4 0 0 0 4 4m10-6h4v2a4 4 0 0 1-4 4',
   calendar: 'M3 5h18v16H3zM7 3v4m10-4v4M3 10h18m-14 4h3m4 0h3m-10 3h3',
   race: 'M3 4v18M3 5l5-2 5 2 5-2 3 1v11l-3-1-5 2-5-2-5 2M8 3v11m5-9v11m5-13v11',
   records: 'M3 20h18M5 17v-4h3v4m3 0V9h3v8m3 0V4h3v13',
+  search: 'M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16zm6-2 6 6',
+  analysis: 'M3 20h18M5 16l4-4 4 2 6-8m0 0v5m0-5h-5',
   forecast: 'M3 19h18M4 15l5-5 4 2 6-7m-5 0h5v5',
   guide: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zm0-11v6m0-10h.01',
   arrow: 'M4 12h15m-6-6 6 6-6 6',
@@ -68,10 +72,16 @@ function ticks(min, max) {
   return Array.from({ length: Math.round((end - start) / step) + 1 }, (_, index) => start + index * step);
 }
 
-export function chart({ label, labels, series, zero = false, format = pointTotal, unit = '', dataHeading = 'Round' }) {
+export function chart({ label, labels, series, zero = false, format = pointTotal, unit = '', dataHeading = 'Round', exportUnit = '' }) {
   const values = series.flatMap(line => line.values.filter(Number.isFinite));
   if (!values.length) return empty('No points to plot for this selection.');
-  const tickValues = ticks(zero ? 0 : Math.min(...values) * .998, Math.max(...values) * 1.002);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const padding = (max - min) * .01 || Math.abs(max) * .002 || .01;
+  const tickValues = ticks(zero ? Math.min(0, min) : min - padding, max + padding);
+  const rows = chartCsvRows({ labels, series, dataHeading, exportUnit });
+  const filename = `${label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'chart'}.csv`;
+  const csv = e(JSON.stringify({ filename, rows }));
   const low = tickValues[0];
   const high = tickValues.at(-1);
   const start = 53;
@@ -107,6 +117,7 @@ export function chart({ label, labels, series, zero = false, format = pointTotal
       }).join('')}
     </svg>
     <p class="chart-readout" aria-hidden="true">Hover or use arrow keys to inspect the chart.</p>
+    <div class="chart-export"><button type="button" class="secondary" aria-label="Download chart CSV for ${e(label)}" data-chart-csv="${csv}">Download chart CSV</button></div>
     <details class="data-table"><summary>View chart data</summary>${table([dataHeading, ...series.map(line => [line.name])], labels.map((entry, index) => [e(entry.detail ?? entry.short), ...series.map(line => e(format(line.values[index])))]), label)}</details>
   </div>`;
 }

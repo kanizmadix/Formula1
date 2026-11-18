@@ -128,7 +128,7 @@ export async function season(seasonId) {
   };
 }
 
-async function open(endpoint, parameters) {
+export async function open(endpoint, parameters) {
   const url = `${OPENF1}${endpoint}?${new URLSearchParams(parameters)}`;
   const rows = await json(url, { ttl: 43_200_000 });
   if (!Array.isArray(rows)) throw new Error('OpenF1 returned an unexpected response.');
@@ -153,6 +153,7 @@ export async function openTiming(session) {
   if (failures.length === 3) throw failures[0].reason;
   return {
     source: 'OpenF1', sessionKey: session.session_key,
+    rawLaps: laps.value ?? [],
     laps: (laps.value ?? []).filter(lap => lap.lap_duration > 0 && !lap.is_pit_out_lap).map(lap => ({
       number: lap.driver_number, lap: lap.lap_number, seconds: lap.lap_duration
     })),

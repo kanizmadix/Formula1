@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
       - uses: actions/checkout@v5
@@ -26,9 +26,18 @@ jobs:
         with:
           node-version: '22'
       - run: npm test
+      - name: Browser evals
+        if: github.event_name != 'schedule'
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm run evals:browser
       - name: Refresh public data
         if: github.event_name != 'pull_request'
         run: npm run refresh -- --publish
+      - name: Refresh season timing archive
+        if: github.event_name != 'pull_request'
+        run: npm run refresh:archive
       - run: npm run build
       - uses: actions/upload-pages-artifact@v5
         if: github.event_name != 'pull_request'
@@ -38,7 +47,7 @@ jobs:
   deploy:
     if: github.event_name != 'pull_request'
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

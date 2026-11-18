@@ -1,4 +1,5 @@
 import { utcRaceTime } from './data.js';
+import { projectionInterval } from './forecast-validation.js';
 import { byAge, completed, cumulative, leaders, median, model, racePoints } from './metrics.js';
 import {
   chart, date, decimals, display, dot, e, empty, icon, lapTime, pageTitle,
@@ -6,7 +7,10 @@ import {
 } from './ui.js';
 
 export const modes = [['drivers', 'Drivers'], ['teams', 'Constructors']];
-const raceTabs = [['results', 'Results'], ['timing', 'Laps & pits'], ['circuit', 'Circuit']];
+export const raceTabs = [
+  ['results', 'Results'], ['strategy', 'Strategy Lab'], ['telemetry', 'Telemetry'],
+  ['timing', 'Laps & pits'], ['qualifying', 'Qualifying'], ['circuit', 'Circuit']
+];
 const raceLink = (year, race, tab = 'results') => `#race/${year}/${race.round}/${tab}`;
 const podium = race => race?.results.find(row => row.classification === '1');
 const status = (race, next) => race.results.length ? tag('Final', 'complete')
@@ -48,7 +52,7 @@ function trajectories(season, mode, selections = []) {
   const races = completed(season);
   const teams = mode === 'teams';
   const rows = season[mode];
-  const selected = selections.length ? rows.filter(row => selections.includes(row.id)) : rows.slice(0, 3);
+  const selected = selections.length ? selections.flatMap(id => rows.find(row => row.id === id) ?? []) : rows.slice(0, 3);
   const series = selected.map((row, index) => ({
     name: teams ? row.name : row.code,
     color: palette[index % palette.length],
@@ -72,7 +76,8 @@ export function overview(season, mode, cached) {
   return `<section class="hero">
     <div class="hero-inner"><span class="eyebrow">${season.year} FORMULA 1 SEASON</span><h1>Race <span>Lab</span></h1>
       <p>Explore the championship, compare lap pace, and see how pit strategy shaped each race.</p>
-      <a class="button" href="${raceLink(season.year, focus)}">Explore ${last ? 'latest results' : 'race weekend'} ${icon('arrow')}</a>
+      <div class="inline-controls"><a class="button" href="${raceLink(season.year, focus)}">Explore ${last ? 'latest results' : 'race weekend'} ${icon('arrow')}</a>
+      ${last && season.year >= 2023 ? `<a class="secondary" href="${raceLink(season.year, last, 'strategy')}">Strategy Lab</a>` : ''}</div>
     </div>
   </section>
   <div class="stats">
@@ -114,6 +119,8 @@ export function standings(season, mode, compare, cached) {
     <div class="control-row">
       ${select('standings-first', 'First', compare[0], options)}
       ${select('standings-second', 'Second', compare[1], [['', 'None'], ...options])}
+      <button class="secondary" type="button" data-share>Copy comparison link</button>
+      <span class="meta" data-share-status role="status"></span>
     </div>
     ${trajectories(season, mode, compare)}
     <p class="subtle">Official totals can differ due to championship adjustments.</p></section>
@@ -164,7 +171,16 @@ function circuit(race) {
   </div>`;
 }
 
-export function raceView(season, race, tab, sprint, timing, pair, pitMetric) {
+export function driverComparison(race, pair) {
+  const options = race.results.filter(row => row.number !== null).map(row => [row.id, row.name]);
+  if (!options.length) return '';
+  return `<div class="control-row">${select('timing-first', 'First driver', pair[0], options)}
+    ${select('timing-second', 'Compare with', pair[1], [['', 'None'], ...options])}
+    <button class="secondary" type="button" data-share>Copy comparison link</button>
+    <span class="meta" data-share-status role="status"></span></div>`;
+}
+
+export function raceView(season, race, tab, sprint, timing, pair, pitMetric, lab = '') {
   if (!race) return empty('Choose a race from the calendar.');
   return `${pageTitle('Race analysis', 'Results, circuit details, and recorded race timing.')}
   <div class="control-row">
@@ -172,17 +188,15 @@ export function raceView(season, race, tab, sprint, timing, pair, pitMetric) {
     ${segments('race-tab', tab, raceTabs, 'Race analysis')}
   </div>
   <div class="focus-banner"><span class="eyebrow">${season.year} · ${roundLabel(race.round)}</span><h2>${e(race.name)}</h2><p class="meta">${e(race.circuit)} · ${e(race.country)} · ${keyTime(race)}</p></div>
-  ${tab === 'circuit' ? circuit(race)
+  ${lab || (tab === 'circuit' ? circuit(race)
     : tab === 'timing' ? timingView(season, race, timing, pair, pitMetric)
-    : `${race.sprint.length ? `<div class="control-row">${segments('result-kind', sprint ? 'sprint' : 'race', [['race', 'Grand Prix'], ['sprint', 'Sprint']], 'Session results')}</div>` : ''}${classification(race, sprint, season.year)}`}`;
+    : `${race.sprint.length ? `<div class="control-row">${segments('result-kind', sprint ? 'sprint' : 'race', [['race', 'Grand Prix'], ['sprint', 'Sprint']], 'Session results')}</div>` : ''}${classification(race, sprint, season.year)}`)}`;
 }
 
 function timingView(season, race, state, pair, pitMetric) {
   if (!race.results.length) return empty('Timing becomes available after a race has finished and the provider has published its data.');
   if (season.year < 1996) return empty('Jolpica’s per-lap timing archive begins in 1996.');
-  const options = race.results.filter(row => row.number !== null).map(row => [row.id, row.name]);
-  const controls = `<div class="control-row">${select('timing-first', 'First driver', pair[0], options)}
-  ${select('timing-second', 'Compare with', pair[1], [['', 'None'], ...options])}</div>`;
+  const controls = driverComparison(race, pair);
   if (!state || state.loading) return `${controls}${empty('Loading archived race timing…')}`;
   if (state.error) return `${controls}${empty(state.error, 'timing')}`;
   const data = state.data;
@@ -220,7 +234,7 @@ function timingView(season, race, state, pair, pitMetric) {
   <div class="dash-grid">
     <section class="panel">
       ${panelHead('Lap pace', data.source === 'OpenF1' ? 'Recorded laps with pit-out laps excluded' : 'Recorded laps from Jolpica, including pit laps')}
-      ${chart({ label: 'Lap time comparison', labels, series: lines, format: lapTime, dataHeading: 'Lap' })}
+      ${chart({ label: 'Lap time comparison', labels, series: lines, format: lapTime, dataHeading: 'Lap', exportUnit: 's' })}
     </section>
     <section class="panel">
       ${panelHead('Pit stops', metric === 'stop' ? 'Stationary time' : data.pitSource ? 'Pit-lane time · Jolpica F1' : 'Time spent in the pit lane',
@@ -267,13 +281,14 @@ export function recordsView(state) {
   <p class="data-stamp">Jolpica F1 · Snapshot ${formatUpdated(data.fetchedAt)} · Shared wins count once per winning entry.</p>`;
 }
 
-export function forecast(season, mode, cutoff) {
+export function forecast(season, mode, cutoff, validation) {
   const rounds = completed(season);
   const prediction = model(season, mode === 'teams', cutoff);
   const controls = `<div class="control-row">${segments('mode', mode, modes, 'Championship')}
     ${rounds.length >= 3 ? select('forecast-round', 'As of round', cutoff, rounds.slice(2).toReversed().map(race => [race.round, raceLabel(race)])) : ''}
   </div>`;
   const base = mode === 'teams' && season.year < 1958 ? null : prediction;
+  const range = base ? projectionInterval(validation, { estimate: 0, remaining: base.rest, year: season.year }) : null;
   return `${pageTitle('Forecast lab', 'Revisit the original college project’s linear regression model using a historical cutoff or the latest completed round.')}
   ${controls}
   ${base ? `<div class="kpi-strip">
@@ -283,9 +298,11 @@ export function forecast(season, mode, cutoff) {
   </div>
   <section class="panel">
     ${panelHead('Season-end points estimate', prediction.useOfficial ? 'Starting points from official standings at the cutoff' : 'Starting points from published race and sprint results at the cutoff')}
-    ${table(['Rank', mode === 'teams' ? 'Constructor' : 'Driver', ['Starting pts'], ['Pts per weekend'], ['Estimated total']], prediction.rows.map((row, index) => [
-      rank(index + 1), name(row.name), pointTotal(row.earned), decimals(row.pace), `<strong>${decimals(row.estimate)}</strong>`
+    ${table(['Rank', mode === 'teams' ? 'Constructor' : 'Driver', ['Starting pts'], ['Pts per weekend'], ['Estimated total'], ...(range ? [['Historical range (pts)']] : [])], prediction.rows.map((row, index) => [
+      rank(index + 1), name(row.name), pointTotal(row.earned), decimals(row.pace), `<strong>${decimals(row.estimate)}</strong>`,
+      ...(range ? [`${decimals(Math.max(0, row.estimate + range.lowerError))} to ${decimals(Math.max(0, row.estimate + range.upperError))}`] : [])
     ]), 'Projected championship points')}
+    ${range ? `<p class="subtle">Historical range applies the 10th and 90th percentile errors from ${range.sample} earlier forecasts with the same number of weekends left.</p>` : ''}
   </section>
   <p class="subtle data-stamp">Fits a line to cumulative points over up to six recent weekends. Adds that scoring pace for each remaining weekend. The rolling backtest uses ${prediction.sample} entrant-weekend forecasts, each trained only on earlier rounds after the entrant first scored. Projections assume a steady scoring pace.</p>` : empty(mode === 'teams' && season.year < 1958 ? 'The constructors’ championship began in 1958.' : 'At least three completed rounds are needed for a projection.')}`;
 }
@@ -308,6 +325,6 @@ export function guide() {
   <div class="guide-grid">
     <section class="panel term"><h2>Jolpica F1</h2><p>Public calendars, classifications, championship standings, winner records, and older timing. The app uses dated snapshots for recent seasons and fetches earlier seasons on demand.</p><a href="https://github.com/jolpica/jolpica-f1">Jolpica documentation ↗</a></section>
     <section class="panel term"><h2>OpenF1</h2><p>Free archived timing provides lap pace, pit stops and tyre stints from 2023. Live session access is a paid OpenF1 service.</p><a href="https://openf1.org/docs/">OpenF1 documentation ↗</a></section>
-    <section class="panel term"><h2>Original project</h2><p>The Streamlit application and its original datasets are preserved in the source repository. Race Lab is an independent educational project.</p><a href="https://github.com/kanizmadix/Formula1">GitHub repository ↗</a></section>
+    <section class="panel term"><h2>Original project</h2><p>Race Lab is an independent educational project. The original Streamlit project is available in Git history.</p><a href="https://github.com/kanizmadix/Formula1/tree/c541a38">Original college project ↗</a></section>
   </div>`;
 }

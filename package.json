@@ -3,11 +3,19 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "engines": {"node": ">=22"},
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "node scripts/server.mjs",
     "build": "node scripts/build.mjs",
     "refresh": "node scripts/refresh.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "evals": "node --test evals/*.test.js",
+    "evals:browser": "playwright test",
+    "refresh:archive": "node scripts/season-archive.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1"
   }
 }
