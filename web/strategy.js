@@ -1,5 +1,6 @@
 import { open } from './data.js';
 import { median } from './metrics.js';
+import { replayControls, replayFrames } from './replay.js';
 import { chart, decimals, display, dot, e, empty, lapTime, palette, panelHead, table } from './ui.js';
 
 const compounds = {
@@ -8,7 +9,7 @@ const compounds = {
 };
 const pitColor = '#ffb278';
 const flagColor = '#c29bff';
-const hasLap = value => Number.isInteger(value) && value > 0;
+const hasLap = value => Number.isInteger(value) && value > 0 && value <= 1000;
 const positive = value => Number.isFinite(value) && value > 0;
 
 export async function loadStrategyContext(sessionKey) {
@@ -26,7 +27,7 @@ export async function loadStrategyContext(sessionKey) {
   };
 }
 
-export function strategyComparison(drivers, timing, raceControl = []) {
+export function strategyComparison(drivers, timing, raceControl = [], raceLapCount) {
   const byNumber = new Map(drivers.map(driver => [driver.number, {
     ...driver, laps: new Map(), stints: [], pits: []
   }]));
@@ -44,7 +45,7 @@ export function strategyComparison(drivers, timing, raceControl = []) {
     stints: driver.stints.sort((a, b) => a.first - b.first),
     pits: driver.pits.sort((a, b) => a.lap - b.lap)
   }));
-  const length = Math.max(0, ...rows.flatMap(row => [
+  const length = Math.max(hasLap(raceLapCount) && rows.some(row => row.laps.size || row.stints.length || row.pits.length) ? raceLapCount : 0, ...rows.flatMap(row => [
     ...row.laps.keys(), ...row.pits.map(pit => pit.lap), ...row.stints.map(stint => stint.last)
   ]));
   const laps = Array.from({ length }, (_, i) => i + 1);
@@ -93,6 +94,7 @@ function timeline({ rows, laps, flags }) {
         }).join('')}
         ${row.pits.map(pit => `<circle cx="${x(pit.lap) + width / 2}" cy="${y}" r="4.5" stroke="#101014" stroke-width="1.5" fill="${pitColor}"><title>${e(`${row.code} pit visit · lap ${pit.lap}`)}</title></circle>`).join('')}`;
       }).join('')}
+      ${laps.map(lap => `<rect class="strategy-lap-hit" data-replay-lap="${lap}" x="${x(lap)}" y="4" width="${width}" height="${height - 26}"><title>Jump to lap ${lap}</title></rect>`).join('')}
       ${labels.map(lap => `<text x="${x(lap) + width / 2}" y="${height - 7}" text-anchor="middle">${lap}</text>`).join('')}
     </svg>`;
 }
@@ -109,18 +111,18 @@ function eventTables({ rows, flags }, weather) {
   const rain = recorded.some(item => item.rainfall === true || item.rainfall === 1);
   const dry = recorded.some(item => item.rainfall === false || item.rainfall === 0);
   return `<div class="split">
-    <section class="panel">${panelHead('Tyre stints', 'Recorded race-lap boundaries')}
+    <section class="panel">${panelHead('Tyre stints', 'Recorded race-lap boundaries', '', 'tyre')}
       ${stints.length ? table(['Driver', 'Compound', ['Start lap'], ['End lap'], ['Tyre age']], stints, 'Compared tyre stints') : empty('No archived tyre stints for these drivers.')}
     </section>
-    <section class="panel">${panelHead('Pit windows', 'Lane transit and stationary time are separate measures')}
+    <section class="panel">${panelHead('Pit windows', 'Lane transit and stationary time are separate measures', '', 'pit')}
       ${pits.length ? table(['Driver', ['Lap'], ['Lane (s)'], ['Stationary (s)']], pits, 'Compared pit windows') : empty('No pit visits recorded for these drivers.')}
     </section>
-    <section class="panel">${panelHead('Race control', 'Safety-car and red-flag messages in session order')}
+    <section class="panel">${panelHead('Race control', 'Safety-car and red-flag messages in session order', '', 'safety')}
       ${flags.length ? `<div class="strategy-scroll">${table([['Lap'], 'UTC', 'Message'], flags.map(flag => [
         display(flag.lap_number), niceTime(flag.date), display(flag.message ?? flag.category)
       ]), 'Race control events')}</div>` : empty('No safety-car or red-flag messages in the available archive.')}
     </section>
-    <section class="panel">${panelHead('Track weather', recorded.length ? `${recorded.length} available UTC samples · ${rain ? 'Rain recorded' : dry ? 'No rain flagged in available samples' : 'Rainfall status unavailable'}` : '')}
+    <section class="panel">${panelHead('Track weather', recorded.length ? `${recorded.length} available UTC samples · ${rain ? 'Rain recorded' : dry ? 'No rain flagged in available samples' : 'Rainfall status unavailable'}` : '', '', 'weather')}
       ${recorded.length ? `<div class="strategy-scroll">${table(['UTC', ['Track °C'], ['Air °C'], ['Humidity %'], 'Rain'], recorded.map(item => [
         niceTime(item.date), decimals(item.track_temperature), decimals(item.air_temperature), decimals(item.humidity),
         item.rainfall == null ? '—' : item.rainfall ? 'Yes' : 'No'
@@ -129,14 +131,14 @@ function eventTables({ rows, flags }, weather) {
   </div>`;
 }
 
-export function strategyView(timingState, contextState, drivers) {
-  if (!timingState || timingState.loading) return empty('Loading Race Strategy Lab…');
-  if (timingState.error) return empty(timingState.error, 'timing');
+export function strategyView(timingState, contextState, drivers, { controls = '', key = '', raceLapCount } = {}) {
+  if (!timingState || timingState.loading) return controls + empty('Loading Race Strategy Lab…');
+  if (timingState.error) return controls + empty(timingState.error, 'timing');
   const timing = timingState.data;
-  if (!timing) return empty('Waiting for a matching archived race session.', 'timing');
-  if (!drivers.length) return empty('Choose a driver with recorded race timing.');
+  if (!timing) return controls + empty('Waiting for a matching archived race session.', 'timing');
+  if (!drivers.length) return controls + empty('Choose a driver with recorded race timing.');
   const context = contextState?.data ?? { control: [], weather: [], missing: [] };
-  const comparison = strategyComparison(drivers, timing, context.control);
+  const comparison = strategyComparison(drivers, timing, context.control, raceLapCount);
   const { rows, laps, delta } = comparison;
   const matched = delta.filter(Number.isFinite);
   const labels = laps.map(lap => ({ short: String(lap), detail: `Lap ${lap}` }));
@@ -145,16 +147,21 @@ export function strategyView(timingState, contextState, drivers) {
   const contextNotice = contextState?.loading ? '<p class="subtle" role="status">Loading weather and race control…</p>'
     : contextState?.error ? empty(contextState.error, 'strategy') : '';
   const middle = median(matched);
-  return `<div class="stack">
+  const frames = replayFrames(comparison, Boolean(contextState?.data && !context.missing.includes('race control')));
+  const replay = frames.length > 0;
+  return `<div class="stack strategy-lab"${replay ? ` data-replay-key="${e(key)}" data-replay-frames="${e(JSON.stringify(frames))}"` : ''}>
+    ${replay ? `<div class="replay-dock">${controls}${replayControls(frames.length)}
+      <span class="visually-hidden" role="status" data-replay-announcement></span></div>` : controls}
     ${unavailable.length ? `<p class="callout">Unavailable from the archive: ${e(unavailable.join(', '))}. <button class="secondary" type="button" data-retry="strategy">Retry data</button></p>` : ''}
-    <section class="panel">${panelHead('Race Strategy Lab', 'Compare tyres, pit visits and lap pace on the same race-lap scale.')}
+    <section class="panel">${panelHead('Race Strategy Lab', 'Replay each lap to compare pace, tyres, pit visits and race control.', '', 'tyre')}
+      ${replay ? '<div class="replay-summary" data-replay-summary></div>' : ''}
       ${timeline(comparison)}
     </section>
     <section class="panel">${panelHead('Lap pace comparison', 'Recorded laps exclude pit-out laps. Traffic, pit-in laps, and race neutralisations can affect pace.')}
-      ${chart({ label: 'Race strategy lap pace', labels, series, format: lapTime, dataHeading: 'Lap', exportUnit: 's' })}
+      ${chart({ label: 'Race strategy lap pace', labels, series, format: lapTime, dataHeading: 'Lap', exportUnit: 's', replay })}
     </section>
     ${matched.length ? `<section class="panel">${panelHead('Matched-lap pace delta', `${rows[0].code} minus ${rows[1].code} · ${matched.length} shared timed laps · median ${middle > 0 ? '+' : ''}${decimals(middle, 3)} s`)}
-      ${chart({ label: 'Matched-lap pace delta', labels, series: [{ name: `${rows[0].code} − ${rows[1].code}`, color: palette[1], values: delta }], format: value => decimals(value, 3), unit: ' s', dataHeading: 'Lap', exportUnit: 's' })}
+      ${chart({ label: 'Matched-lap pace delta', labels, series: [{ name: `${rows[0].code} − ${rows[1].code}`, color: palette[1], values: delta }], format: value => decimals(value, 3), unit: ' s', dataHeading: 'Lap', exportUnit: 's', replay })}
     </section>` : ''}
     ${contextNotice}${eventTables(comparison, context.weather)}
     <p class="data-stamp">OpenF1 race session ${e(timing.sessionKey)}${timing.pitSource ? ` · Pit timing fallback ${e(timing.pitSource)}` : ''}</p>

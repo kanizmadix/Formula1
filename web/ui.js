@@ -10,6 +10,16 @@ const paths = {
   analysis: 'M3 20h18M5 16l4-4 4 2 6-8m0 0v5m0-5h-5',
   forecast: 'M3 19h18M4 15l5-5 4 2 6-7m-5 0h5v5',
   guide: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zm0-11v6m0-10h.01',
+  tyre: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 5a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM5 5l2 2m10 10 2 2M19 5l-2 2M7 17l-2 2',
+  pit: 'M3 20h18M5 16h3a4 4 0 0 0 4-4V5m-3 3 3-3 3 3M5 6v5m14-5v10',
+  safety: 'M5 11l2-5h10l2 5m-14 0-2 2v4h18v-4l-2-2H5zm1 6v3m12-3v3M7 14h2m6 0h2m-7-8V3h4v3',
+  telemetry: 'M2 13h4l3-7 4 12 3-8 2 3h4',
+  qualifying: 'M12 8v5l3-2m-3-6a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm-3-3h6m3 4 2-2',
+  weather: 'M5 15h13a3 3 0 0 0 0-6h-1a5 5 0 0 0-9-1H6a4 4 0 0 0-1 7zm3 3-1 3m6-3-1 3m6-3-1 3',
+  play: 'M8 5l12 7-12 7z',
+  pause: 'M9 5v14m6-14v14',
+  previous: 'M6 5v14M18 5l-9 7 9 7z',
+  next: 'M18 5v14M6 5l9 7-9 7z',
   arrow: 'M4 12h15m-6-6 6 6-6 6',
   pin: 'M12 22s7-6.2 7-12a7 7 0 0 0-14 0c0 5.8 7 12 7 12zm0-9a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
   team: 'M3 19v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2zm6-9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm8 3h1a3 3 0 0 1 3 3v3h-3m-2-9a3 3 0 0 0 0-6'
@@ -44,11 +54,11 @@ export const dot = color => `<i class="dot" style="--swatch:${color}" aria-hidde
 
 export const empty = (message, retry) => `<div class="panel empty" role="status"><span>${e(message)}</span>${retry ? `<button class="button" data-retry="${retry}">Try again</button>` : ''}</div>`;
 export const pageTitle = (title, description) => `<header class="page-title"><h1>${e(title)}</h1><p>${e(description)}</p></header>`;
-export const panelHead = (title, description = '', actions = '') => `<div class="panel-head"><div><h2>${e(title)}</h2>${description ? `<p>${e(description)}</p>` : ''}</div>${actions}</div>`;
+export const panelHead = (title, description = '', actions = '', glyph) => `<div class="panel-head"><div><h2${glyph ? ' class="icon-heading"' : ''}>${glyph ? icon(glyph) : ''}${e(title)}</h2>${description ? `<p>${e(description)}</p>` : ''}</div>${actions}</div>`;
 export const tag = (label, variant = '') => `<span class="tag ${variant}">${e(label)}</span>`;
 export function segments(key, value, options, label) {
-  return `<div class="segmented" role="group" aria-label="${e(label)}">${options.map(([id, name]) =>
-    `<button type="button" data-control="${key}" data-value="${e(id)}" aria-pressed="${id === value}">${e(name)}</button>`).join('')}</div>`;
+  return `<div class="segmented" role="group" aria-label="${e(label)}">${options.map(([id, name, glyph]) =>
+    `<button type="button" data-control="${key}" data-value="${e(id)}" aria-pressed="${id === value}">${glyph ? icon(glyph) : ''}${e(name)}</button>`).join('')}</div>`;
 }
 export function select(key, label, value, options) {
   return `<label for="${key}">${e(label)} <select id="${key}" name="${key}" aria-label="${e(label)}" data-select="${key}">${options.map(([id, name]) =>
@@ -72,7 +82,7 @@ function ticks(min, max) {
   return Array.from({ length: Math.round((end - start) / step) + 1 }, (_, index) => start + index * step);
 }
 
-export function chart({ label, labels, series, zero = false, format = pointTotal, unit = '', dataHeading = 'Round', exportUnit = '' }) {
+export function chart({ label, labels, series, zero = false, format = pointTotal, unit = '', dataHeading = 'Round', exportUnit = '', replay = false }) {
   const values = series.flatMap(line => line.values.filter(Number.isFinite));
   if (!values.length) return empty('No points to plot for this selection.');
   const min = Math.min(...values);
@@ -113,10 +123,10 @@ export function chart({ label, labels, series, zero = false, format = pointTotal
       ${labels.map((entry, index) => {
         const width = Math.min(24, (end - start) / Math.max(1, labels.length - 1));
         const readout = e(readable(entry, index));
-        return `<rect data-chart-hit="${readout}" tabindex="${index === 0 ? 0 : -1}" role="img" aria-label="${readout}" x="${x(index) - width / 2}" y="${top}" width="${width}" height="${bottom - top}"><title>${readout}</title></rect>`;
+        return `<rect data-chart-hit="${readout}"${replay ? ` data-replay-lap="${index + 1}"` : ''} tabindex="${index === 0 ? 0 : -1}" role="img" aria-label="${readout}" x="${x(index) - width / 2}" y="${top}" width="${width}" height="${bottom - top}"><title>${readout}</title></rect>`;
       }).join('')}
     </svg>
-    <p class="chart-readout" aria-hidden="true">Hover or use arrow keys to inspect the chart.</p>
+    <p class="chart-readout" aria-hidden="true">${replay ? 'Tap a lap to seek. Use arrow keys to inspect and Enter to seek.' : 'Hover or use arrow keys to inspect the chart.'}</p>
     <div class="chart-export"><button type="button" class="secondary" aria-label="Download chart CSV for ${e(label)}" data-chart-csv="${csv}">Download chart CSV</button></div>
     <details class="data-table"><summary>View chart data</summary>${table([dataHeading, ...series.map(line => [line.name])], labels.map((entry, index) => [e(entry.detail ?? entry.short), ...series.map(line => e(format(line.values[index])))]), label)}</details>
   </div>`;

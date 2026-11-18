@@ -6,7 +6,7 @@ Race Lab brings my final-year Formula 1 data science project to the web as an in
 
 ## Explore the app
 
-- **Race Strategy Lab** compares two drivers’ lap pace, matched-lap deltas, tyre stints, and pit visits. Safety-car and red-flag messages and track weather provide context. [Try the 2025 Abu Dhabi comparison](https://kanizmadix.github.io/Formula1/#race/2025/24/strategy?a=max_verstappen&b=piastri)
+- **Race Strategy Lab** compares two drivers’ lap pace, matched-lap deltas, tyre stints, and pit visits. The lap replay highlights the same lap across the strategy timeline and both pace charts. Mobile controls stay within reach while you scroll. Safety-car and red-flag messages and track weather provide context. [Try the 2025 Abu Dhabi comparison](https://kanizmadix.github.io/Formula1/#race/2025/24/strategy?a=max_verstappen&b=piastri)
 - **Lap telemetry and qualifying** compare speed, throttle, brake and gear traces for independently selected laps. Qualifying shows Q1–Q3 times alongside grid and finish positions.
 - **Season data and records** compare lap pace and pit-lane durations by driver, team and circuit. Records cover wins, winner ages, winless career starts and reported retirement reasons. Coverage and sample counts appear next to the data.
 - **Forecast Lab** estimates season-end points from a historical cutoff or the latest completed round. A rolling 2021–2025 backtest compares recent trend, recent average and hold-points methods. Historical error ranges compare forecasts at the same horizon.

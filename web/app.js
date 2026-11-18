@@ -3,6 +3,7 @@ import { completed } from './metrics.js';
 import { download, e, empty, icon } from './ui.js';
 import { calendar, driverComparison, forecast, guide, overview, raceTabs, raceView, recordsView, standings } from './views.js';
 import { loadStrategyContext, strategyView } from './strategy.js';
+import { mountReplay } from './replay.js';
 import { defaultTelemetryLap, loadQualifying, loadTelemetry, qualifyingView, telemetryView } from './telemetry.js';
 import { DEFAULT_VALIDATION_YEARS, evaluateForecasts, forecastValidationView } from './forecast-validation.js';
 import { loadSeasonAnalysis, loadWinlessRecords, seasonAnalysisView, seasonArchiveRecordsView } from './season-analysis.js';
@@ -32,6 +33,9 @@ let analysisFilters = {};
 let forecastRound = null;
 let records;
 let dataKey = '';
+let replayState = { key: '', lap: 1, playing: false };
+let unmountReplay;
+let startingLightsPlayed = false;
 
 nav.innerHTML = Object.entries(pages).filter(([id]) => id !== 'guide').map(([id, label]) =>
   `<a href="#${id}" data-page="${id}" class="nav-link">${icon(id)}${e(label)}</a>`).join('');
@@ -221,7 +225,9 @@ function raceLab(data, race, timing, pair) {
   const sessionKey = timing?.data?.sessionKey;
   if (tab === 'strategy') {
     const context = sessionKey ? resource(`strategy/${sessionKey}`, () => loadStrategyContext(sessionKey), 'Race context could not be loaded.') : null;
-    return { loading: context?.loading, markup: controls + strategyView(timing, context, drivers.filter(Boolean)) };
+    return { loading: context?.loading, markup: strategyView(timing, context, drivers.filter(Boolean), {
+      controls, key: `${data.year}/${race.round}`, raceLapCount: Math.max(0, ...race.results.map(row => row.laps ?? 0))
+    }) };
   }
   const { archive, selected, raw } = telemetrySelection(drivers, timing?.data);
   const liveData = sessionKey && raw.some(Boolean) ? resource(
@@ -318,7 +324,23 @@ function render(focus) {
   const focusedId = restore?.id;
   const focusedControl = restore?.dataset.control;
   const focusedValue = restore?.dataset.value;
+  unmountReplay?.();
   content.innerHTML = markup;
+  const replay = content.querySelector('[data-replay-frames]');
+  if (replay) {
+    if (replayState.key !== replay.dataset.replayKey) {
+      replayState = { key: replay.dataset.replayKey, lap: 1, playing: false };
+    }
+    unmountReplay = mountReplay(replay, replayState);
+  } else {
+    unmountReplay = undefined;
+    replayState.playing = false;
+  }
+  const lights = content.querySelector('.start-lights');
+  if (lights && !startingLightsPlayed) {
+    lights.classList.add('is-starting');
+    startingLightsPlayed = true;
+  }
   content.setAttribute('aria-busy', String(busy));
   if (focusedId && focusedId !== 'content') document.getElementById(focusedId)?.focus({ preventScroll: true });
   if (focusedControl) {
@@ -380,6 +402,7 @@ function onSelect(control, value) {
   }
   if (control.startsWith('standings-') || control.startsWith('timing-')) {
     const race = control.startsWith('timing-') ? getRace(data) : null;
+    if (race) replayState.playing = false;
     const options = race ? race.results.filter(row => row.number !== null) : data[mode];
     const pair = effectivePair(options, route.pair);
     pair[control.endsWith('first') ? 0 : 1] = value;

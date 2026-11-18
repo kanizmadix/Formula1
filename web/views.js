@@ -8,8 +8,8 @@ import {
 
 export const modes = [['drivers', 'Drivers'], ['teams', 'Constructors']];
 export const raceTabs = [
-  ['results', 'Results'], ['strategy', 'Strategy Lab'], ['telemetry', 'Telemetry'],
-  ['timing', 'Laps & pits'], ['qualifying', 'Qualifying'], ['circuit', 'Circuit']
+  ['results', 'Results', 'race'], ['strategy', 'Strategy Lab', 'tyre'], ['telemetry', 'Telemetry', 'telemetry'],
+  ['timing', 'Laps & pits', 'pit'], ['qualifying', 'Qualifying', 'qualifying'], ['circuit', 'Circuit', 'pin']
 ];
 const raceLink = (year, race, tab = 'results') => `#race/${year}/${race.round}/${tab}`;
 const podium = race => race?.results.find(row => row.classification === '1');
@@ -74,6 +74,7 @@ export function overview(season, mode, cached) {
   const focus = last || next || season.races[0];
   const cards = next ? season.races.slice(season.races.indexOf(next), season.races.indexOf(next) + 3) : season.races.slice(-3).reverse();
   return `<section class="hero">
+    <div class="start-lights" aria-hidden="true">${Array.from({ length: 5 }, (_, i) => `<span style="--lamp:${i}"></span>`).join('')}</div>
     <div class="hero-inner"><span class="eyebrow">${season.year} FORMULA 1 SEASON</span><h1>Race <span>Lab</span></h1>
       <p>Explore the championship, compare lap pace, and see how pit strategy shaped each race.</p>
       <div class="inline-controls"><a class="button" href="${raceLink(season.year, focus)}">Explore ${last ? 'latest results' : 'race weekend'} ${icon('arrow')}</a>
@@ -174,7 +175,7 @@ function circuit(race) {
 export function driverComparison(race, pair) {
   const options = race.results.filter(row => row.number !== null).map(row => [row.id, row.name]);
   if (!options.length) return '';
-  return `<div class="control-row">${select('timing-first', 'First driver', pair[0], options)}
+  return `<div class="control-row driver-comparison">${select('timing-first', 'First driver', pair[0], options)}
     ${select('timing-second', 'Compare with', pair[1], [['', 'None'], ...options])}
     <button class="secondary" type="button" data-share>Copy comparison link</button>
     <span class="meta" data-share-status role="status"></span></div>`;

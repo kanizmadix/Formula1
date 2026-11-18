@@ -8,6 +8,11 @@ test('published dashboard compares real archived drivers', async ({ page }) => {
   await expect(page.getByRole('table', { name: 'Compared tyre stints' })).toContainText('PIA');
   await expect(page.getByRole('table', { name: 'Compared pit windows' })).toContainText('VER');
   await expect(page.getByRole('heading', { name: 'Matched-lap pace delta' })).toBeVisible();
+  const scrubber = page.getByRole('slider', { name: 'Replay lap' });
+  await expect(scrubber).toHaveAttribute('aria-valuetext', 'Lap 1 of 58');
+  await page.getByRole('button', { name: 'Next lap' }).click();
+  await expect(page.getByRole('heading', { name: 'Lap 2 replay' })).toBeVisible();
+  await expect(page.locator('[data-replay-lap="2"].is-current')).toHaveCount(3);
   await page.getByLabel('Compare with', { exact: true }).selectOption('norris');
   await expect(page.getByRole('table', { name: 'Compared tyre stints' })).toContainText('NOR');
   await page.reload();
