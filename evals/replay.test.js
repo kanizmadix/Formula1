@@ -59,6 +59,7 @@ test('replay summary escapes archived text and labels missing timing, tyres and 
   assert.match(html, /Tyre unavailable/);
   assert.match(html, /Pit duration unavailable/);
   assert.match(replaySummary({ ...frame, flags: [], raceControlAvailable: false }), /Race control data unavailable/);
+  assert.match(replaySummary({ ...frame, flags: [], raceControlAvailable: null }), /Loading race control/);
 });
 
 test('motorsport glyphs are distinct, original vector shapes with decorative semantics', () => {

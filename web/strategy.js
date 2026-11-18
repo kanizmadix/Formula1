@@ -147,7 +147,9 @@ export function strategyView(timingState, contextState, drivers, { controls = ''
   const contextNotice = contextState?.loading ? '<p class="subtle" role="status">Loading weather and race control…</p>'
     : contextState?.error ? empty(contextState.error, 'strategy') : '';
   const middle = median(matched);
-  const frames = replayFrames(comparison, Boolean(contextState?.data && !context.missing.includes('race control')));
+  const raceControlAvailable = contextState?.loading ? null
+    : Boolean(contextState?.data && !context.missing.includes('race control'));
+  const frames = replayFrames(comparison, raceControlAvailable);
   const replay = frames.length > 0;
   return `<div class="stack strategy-lab"${replay ? ` data-replay-key="${e(key)}" data-replay-frames="${e(JSON.stringify(frames))}"` : ''}>
     ${replay ? `<div class="replay-dock">${controls}${replayControls(frames.length)}

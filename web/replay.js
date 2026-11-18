@@ -62,6 +62,8 @@ const pitDuration = pit => [
 
 export function replaySummary(frame) {
   const { lap, flags, difference, drivers, raceControlAvailable } = frame;
+  const flagStatus = raceControlAvailable === null ? 'Loading race control…' : raceControlAvailable
+    ? 'No lap-tagged race control event.' : 'Race control data unavailable.';
   const delta = difference == null ? '' : `<div class="replay-delta"><span>${e(drivers[0].code)} − ${e(drivers[1].code)}</span><strong>${difference > 0 ? '+' : ''}${decimals(difference, 3)} s</strong></div>`;
   return `<h3>Lap ${lap} replay</h3>
     <div class="replay-drivers">${drivers.map((row, i) => `<div class="replay-driver" style="--driver-accent:${palette[i]}">
@@ -71,7 +73,7 @@ export function replaySummary(frame) {
       ${row.pitted.map(pit => `<p class="subtle">${pitDuration(pit) || 'Pit duration unavailable'}</p>`).join('')}
     </div>`).join('')}${delta}</div>
     <div class="replay-flags">${icon('safety')}<div>${flags.length ? flags.map(flag => `<p>${e(flag)}</p>`).join('')
-      : `<p>${raceControlAvailable ? 'No lap-tagged race control event' : 'Race control data unavailable'}.</p>`}</div></div>`;
+      : `<p>${flagStatus}</p>`}</div></div>`;
 }
 
 export function mountReplay(root, state) {
@@ -108,7 +110,12 @@ export function mountReplay(root, state) {
     summary.innerHTML = replaySummary(frames[lap - 1]);
     for (const mark of active) mark.classList.remove('is-current');
     active = markers.filter(mark => Number(mark.dataset.replayLap) === lap);
-    for (const mark of active) mark.classList.add('is-current');
+    for (const mark of active) {
+      mark.classList.add('is-current');
+      if (mark.dataset.chartHit) {
+        mark.closest('.chart-block').querySelector('.chart-readout').textContent = mark.dataset.chartHit;
+      }
+    }
   }
 
   function dispatch(action) {

@@ -162,6 +162,7 @@ test('Strategy Lab replay keeps the two pace charts and tyre timeline on the sel
   await expect(summary).toContainText('Pit visit');
   await expect(summary).toContainText('21.000 s lane');
   await expect(page.locator('[data-replay-lap="2"].is-current')).toHaveCount(3);
+  await expect(page.locator('.strategy-lab .chart-readout')).toHaveText([/^Lap 2 · /, /^Lap 2 · /]);
 
   const pace = page.locator('svg[aria-label="Race strategy lap pace"]');
   await pace.locator('[data-replay-lap="3"]').focus();
